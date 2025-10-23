@@ -1,0 +1,161 @@
+import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'main.dart'; // Import the main.dart file containing the CurrencyConverter widget
+
+void main() {
+  runApp(const MyApp());
+}
+
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Currency Converter Demo',
+      theme: ThemeData(primarySwatch: Colors.teal, fontFamily: 'Vazir'),
+      home: const DemoScreen(),
+    );
+  }
+}
+
+class DemoScreen extends StatefulWidget {
+  const DemoScreen({super.key});
+
+  @override
+  _DemoScreenState createState() => _DemoScreenState();
+}
+
+class _DemoScreenState extends State<DemoScreen> {
+  final TextEditingController _testAmountController = TextEditingController();
+  String _conversionResult = '';
+
+  // Function to simulate currency conversion programmatically
+  Future<void> _convertCurrency(String amount, bool isToman) async {
+    final prefs = await SharedPreferences.getInstance();
+    String cleanedInput = amount.replaceAll(RegExp(r'[,٫\s]'), '');
+    int parsedAmount = int.tryParse(cleanedInput) ?? 0;
+
+    if (parsedAmount <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('لطفاً مبلغ معتبر و مثبت وارد کنید', textDirection: TextDirection.rtl),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+
+    // Simulate conversion logic (similar to _calculate in CurrencyConverter)
+    int convertedAmount = isToman ? parsedAmount * 10 : parsedAmount ~/ 10;
+    String formattedAmount = NumberFormat.decimalPattern('fa').format(parsedAmount);
+    String result = isToman
+        ? 'معادل: ${NumberFormat.decimalPattern('fa').format(convertedAmount)} ریال'
+        : 'معادل: ${convertedAmount > 0 ? NumberFormat.decimalPattern('fa').format(convertedAmount) : 'کمتر از یک تومان'} تومان';
+
+    // Save to history
+    await prefs.setStringList('calculation_history', [
+      'مبلغ: $formattedAmount ${isToman ? 'تومان' : 'ریال'}\n$result',
+      ...(prefs.getStringList('calculation_history') ?? []).take(9),
+    ]);
+
+    setState(() {
+      _conversionResult = result;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('تبدیل با موفقیت انجام شد', textDirection: TextDirection.rtl),
+        backgroundColor: Colors.green,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('دموی مبدل پول ایرانی'),
+        centerTitle: true,
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            TextField(
+              controller: _testAmountController,
+              keyboardType: TextInputType.number,
+              textDirection: TextDirection.rtl,
+              decoration: const InputDecoration(
+                labelText: 'مبلغ (تومان)',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.monetization_on),
+              ),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: () => _convertCurrency(_testAmountController.text, true),
+              child: const Text('تبدیل به ریال'),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const CurrencyConverter()),
+                );
+              },
+              child: const Text('باز کردن مبدل کامل'),
+            ),
+            const SizedBox(height: 16),
+            if (_conversionResult.isNotEmpty)
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Text(
+                    _conversionResult,
+                    textDirection: TextDirection.rtl,
+                    style: const TextStyle(fontSize: 16),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _testAmountController.dispose();
+    super.dispose();
+  }
+}
+
+Future<bool> _initiateDirectPayment(int amount, bool isToman) async {
+  try {
+    final response = await http.post(
+      Uri.parse('https://api.zarinpal.com/pg/v4/payment/request.json'),
+      body: {
+        'merchant_id': 'YOUR_MERCHANT_ID',
+        'amount': isToman ? amount.toString() : (amount * 10).toString(),
+        'currency': 'IRR',
+        'description': 'پرداخت مستقیم از مبدل پول ایرانی',
+        'callback_url': 'YOUR_CALLBACK_URL',
+      },
+    );
+    if (response.statusCode == 200) {
+      // Navigate to payment gateway using webview_flutter
+      return true;
+    }
+    return false;
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('خطا در پرداخت: $e', textDirection: TextDirection.rtl),
+        backgroundColor: Colors.redAccent,
+      ),
+    );
+    return false;
+  }
+}
